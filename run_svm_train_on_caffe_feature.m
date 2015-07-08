@@ -6,5 +6,5 @@ tr_dat=tr_dat.feat_label;
 te_dat=te_dat.feat_label;
 %disp(['saving result file is  '  savefile])
 trainPredict_on_caffe_featuer_parfor(tr_dat,te_dat,savefile)
-
+test=1
 end
