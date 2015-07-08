@@ -1,5 +1,5 @@
 // Copyright 2014 BVLC and contributors.
-   
+
 #include <stdint.h>
 #include <leveldb/db.h>
 #include <pthread.h>
@@ -54,15 +54,14 @@ void* DataLayerPrefetch(void* layer_pointer) {
           switch (layer->layer_param_.data_param().backend()) {
           case DataParameter_DB_LEVELDB:
               layer->iter_->Next();
-            if (!layer->iter_->Valid()) {
-              // We have reached the end. Restart from the first.
-              DLOG(INFO) << "Restarting data prefetching from start.";
-              layer->iter_->SeekToFirst();
+              if (!layer->iter_->Valid()) {
+                // We have reached the end. Restart from the first.
+                DLOG(INFO) << "Restarting data prefetching from start.";
+                layer->iter_->SeekToFirst();
+              }
               CHECK(layer->iter_);
               CHECK(layer->iter_->Valid());
               datum.ParseFromString(layer->iter_->value().ToString());
-
-            }
             break;
           case DataParameter_DB_LMDB:
             if (mdb_cursor_get(layer->mdb_cursor_, &layer->mdb_key_,
