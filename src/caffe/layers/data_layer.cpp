@@ -1,5 +1,5 @@
 // Copyright 2014 BVLC and contributors.
-//written by Tao Zeng
+   
 #include <stdint.h>
 #include <leveldb/db.h>
 #include <pthread.h>
