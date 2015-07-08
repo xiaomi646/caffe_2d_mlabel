@@ -1,0 +1,189 @@
+name: "VGG_16_layers_Brain_annotation"
+layers {
+ name: "data"
+ type: IMAGE_LABEL_DATA
+ top: "data"
+ top: "label"
+ image_label_data_param {
+   source: "/home/rli/caffe_3D_FastSEG/data/196_cutmargin_pad_6"
+   #mean_file: "../data/mri_mean.binary"
+   out_label_size_h: 50
+   out_label_size_w: 41
+   out_label_size_d: 42
+   #crop_size_h: 62
+   #crop_size_w: 53
+   #crop_size_d: 54
+   #crop_size_h: 6
+   #crop_size_w: 42
+   #crop_size_d: 43
+   batch_size: 1
+   crop_size: 0
+   mirror: false
+ }
+}
+
+
+layers {
+  bottom: "data"
+  top: "conv1_1"
+  name: "conv1_1"
+  type: CONVOLUTION_SK
+  blobs_lr: 1
+  blobs_lr: 1
+  weight_decay: 0
+  weight_decay: 0
+  convolution_param {
+    num_output: 8        
+    kernel_h: 3
+	kernel_w: 3
+	kernel_d: 3
+	weight_filler {
+      type: "gaussian"
+      std: 0.05
+    }
+    bias_filler {
+      type: "constant"
+      value: 1
+    }
+  }
+}
+
+
+layers {
+  bottom: "conv1_1"
+  top: "conv1_1"
+  name: "relu_1"
+  type: RELU
+}
+
+ 
+
+layers {
+  bottom: "conv1_1"
+  top: "conv1_2"
+  name: "conv1_2"
+  type: CONVOLUTION_SK
+  blobs_lr: 1
+  blobs_lr: 1
+  weight_decay: 0
+  weight_decay: 0
+  convolution_param {
+    num_output: 16
+    kernel_h: 3
+    kernel_w: 3
+    kernel_d: 3
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+    bias_filler {
+      type: "constant"
+      value: 1
+    }
+  }
+}
+
+
+layers {
+  bottom: "conv1_2"
+  top: "conv1_2"
+  name: "relu_2"
+  type: RELU
+}
+
+
+
+layers {
+  name: "pool_1"
+  type: POOLING_SK
+  bottom: "conv1_2"
+  top: "pool_1"
+  pooling_param {
+    pool: MAX
+    kernel_size: 3
+    # stride: 3
+	kstride: 1
+  }
+} 
+
+ 
+
+ 
+ 
+layers {
+  bottom: "pool_1"
+  top: "conv1_3"
+  name: "conv1_3"
+  type: CONVOLUTION_SK
+  blobs_lr: 1
+  blobs_lr: 1
+  weight_decay: 0
+  weight_decay: 0
+  convolution_param {
+    num_output: 8
+    kernel_h: 3
+    kernel_w: 3
+    kernel_d: 3
+    kstride_h: 3
+	kstride_w: 3
+	kstride_d: 3
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+    bias_filler {
+      type: "constant"
+      value: 1
+    }
+  }
+}
+
+ layers {
+  bottom: "conv1_3"
+  top: "conv1_3"
+  name: "relu_3"
+  type: RELU
+}
+
+ 
+ 
+layers {
+  bottom: "conv1_3"
+  top: "conv1_4"
+  name: "conv1_4"
+  type: CONVOLUTION_SK
+  blobs_lr: 1
+  blobs_lr: 1
+  weight_decay: 0
+  weight_decay: 0
+  convolution_param {
+    num_output: 1
+    kernel_h: 1
+    kernel_w: 1
+    kernel_d: 1
+	kstride_h: 3
+	kstride_w: 3
+    kstride_d: 3
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+    bias_filler {
+      type: "constant"
+      value: 1
+    }
+  }
+}
+
+
+layers {
+  bottom: "conv1_4"
+  top: "conv1_4"
+  name: "sig_4"
+  type: SIGMOID
+}
+
+
+
+ 
+ 
