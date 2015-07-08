@@ -49,108 +49,150 @@ void* DataLayerPrefetch(void* layer_pointer) {
   const Dtype* mean = layer->data_mean_.cpu_data();
   for (int item_id = 0; item_id < batch_size; ++item_id) {
     // get a blob
-    switch (layer->layer_param_.data_param().backend()) {
-    case DataParameter_DB_LEVELDB:
-      CHECK(layer->iter_);
-      CHECK(layer->iter_->Valid());
-      datum.ParseFromString(layer->iter_->value().ToString());
-      break;
-    case DataParameter_DB_LMDB:
-      CHECK_EQ(mdb_cursor_get(layer->mdb_cursor_, &layer->mdb_key_,
-              &layer->mdb_value_, MDB_GET_CURRENT), MDB_SUCCESS);
-      datum.ParseFromArray(layer->mdb_value_.mv_data,
-          layer->mdb_value_.mv_size);
-      break;
-    default:
-      LOG(FATAL) << "Unknown database backend";
-    }
+    do{
+          switch (layer->layer_param_.data_param().backend()) {
+          case DataParameter_DB_LEVELDB:
+            layer->iter_->Next();
+            if (!layer->iter_->Valid()) {
+              // We have reached the end. Restart from the first.
+              DLOG(INFO) << "Restarting data prefetching from start.";
+              layer->iter_->SeekToFirst();
+              CHECK(layer->iter_);
+              CHECK(layer->iter_->Valid());
+              datum.ParseFromString(layer->iter_->value().ToString());
 
-    const string& data = datum.data();
-    if (crop_size) {
-      CHECK(data.size()) << "Image cropping only support uint8 data";
-      int h_off, w_off;
-      // We only do random crop when we do training.
-      if (layer->phase_ == Caffe::TRAIN) {
-        h_off = layer->PrefetchRand() % (height - crop_size);
-        w_off = layer->PrefetchRand() % (width - crop_size);
-      } else {
-        h_off = (height - crop_size) / 2;
-        w_off = (width - crop_size) / 2;
-      }
-      if (mirror && layer->PrefetchRand() % 2) {
-        // Copy mirrored version
-        for (int c = 0; c < channels; ++c) {
-          for (int h = 0; h < crop_size; ++h) {
-            for (int w = 0; w < crop_size; ++w) {
-              int top_index = ((item_id * channels + c) * crop_size + h)
-                              * crop_size + (crop_size - 1 - w);
-              int data_index = (c * height + h + h_off) * width + w + w_off;
-              Dtype datum_element =
-                  static_cast<Dtype>(static_cast<uint8_t>(data[data_index]));
-              top_data[top_index] = (datum_element - mean[data_index]) * scale;
+            }
+            break;
+          case DataParameter_DB_LMDB:
+            if (mdb_cursor_get(layer->mdb_cursor_, &layer->mdb_key_,
+                    &layer->mdb_value_, MDB_NEXT) != MDB_SUCCESS) {
+              // We have reached the end. Restart from the first.
+              DLOG(INFO) << "Restarting data prefetching from start.";
+              CHECK_EQ(mdb_cursor_get(layer->mdb_cursor_, &layer->mdb_key_,
+                      &layer->mdb_value_, MDB_FIRST), MDB_SUCCESS);
+            }
+            CHECK_EQ(mdb_cursor_get(layer->mdb_cursor_, &layer->mdb_key_,
+                    &layer->mdb_value_, MDB_GET_CURRENT), MDB_SUCCESS);
+            datum.ParseFromArray(layer->mdb_value_.mv_data,
+                layer->mdb_value_.mv_size);
+
+            break;
+          default:
+            LOG(FATAL) << "Unknown database backend";
+          }
+
+          if (layer->output_labels_) {
+            CHECK_EQ(datum.label_size(), num_labels);
+            for (int l = 0; l < num_labels; ++l) {
+              top_label[item_id * num_labels + l] = datum.label(l);
             }
           }
-        }
-      } else {
-        // Normal copy
-        for (int c = 0; c < channels; ++c) {
-          for (int h = 0; h < crop_size; ++h) {
-            for (int w = 0; w < crop_size; ++w) {
-              int top_index = ((item_id * channels + c) * crop_size + h)
-                              * crop_size + w;
-              int data_index = (c * height + h + h_off) * width + w + w_off;
-              Dtype datum_element =
-                  static_cast<Dtype>(static_cast<uint8_t>(data[data_index]));
-              top_data[top_index] = (datum_element - mean[data_index]) * scale;
+
+
+          // switch (layer->layer_param_.data_param().backend()) {
+          // case DataParameter_DB_LEVELDB:
+          //   CHECK(layer->iter_);
+          //   CHECK(layer->iter_->Valid());
+          //   datum.ParseFromString(layer->iter_->value().ToString());
+          //   break;
+          // case DataParameter_DB_LMDB:
+          //   CHECK_EQ(mdb_cursor_get(layer->mdb_cursor_, &layer->mdb_key_,
+          //           &layer->mdb_value_, MDB_GET_CURRENT), MDB_SUCCESS);
+          //   datum.ParseFromArray(layer->mdb_value_.mv_data,
+          //       layer->mdb_value_.mv_size);
+          //   break;
+          // default:
+          //   LOG(FATAL) << "Unknown database backend";
+          // }
+
+      }while(accept && layer->output_labels_&&num_labels==1);
+
+          const string& data = datum.data();
+          if (crop_size) {
+            CHECK(data.size()) << "Image cropping only support uint8 data";
+            int h_off, w_off;
+            // We only do random crop when we do training.
+            if (layer->phase_ == Caffe::TRAIN) {
+              h_off = layer->PrefetchRand() % (height - crop_size);
+              w_off = layer->PrefetchRand() % (width - crop_size);
+            } else {
+              h_off = (height - crop_size) / 2;
+              w_off = (width - crop_size) / 2;
+            }
+            if (mirror && layer->PrefetchRand() % 2) {
+              // Copy mirrored version
+              for (int c = 0; c < channels; ++c) {
+                for (int h = 0; h < crop_size; ++h) {
+                  for (int w = 0; w < crop_size; ++w) {
+                    int top_index = ((item_id * channels + c) * crop_size + h)
+                                    * crop_size + (crop_size - 1 - w);
+                    int data_index = (c * height + h + h_off) * width + w + w_off;
+                    Dtype datum_element =
+                        static_cast<Dtype>(static_cast<uint8_t>(data[data_index]));
+                    top_data[top_index] = (datum_element - mean[data_index]) * scale;
+                  }
+                }
+              }
+            } else {
+              // Normal copy
+              for (int c = 0; c < channels; ++c) {
+                for (int h = 0; h < crop_size; ++h) {
+                  for (int w = 0; w < crop_size; ++w) {
+                    int top_index = ((item_id * channels + c) * crop_size + h)
+                                    * crop_size + w;
+                    int data_index = (c * height + h + h_off) * width + w + w_off;
+                    Dtype datum_element =
+                        static_cast<Dtype>(static_cast<uint8_t>(data[data_index]));
+                    top_data[top_index] = (datum_element - mean[data_index]) * scale;
+                  }
+                }
+              }
+            }
+          } else {
+            // we will prefer to use data() first, and then try float_data()
+            if (data.size()) {
+              for (int j = 0; j < size; ++j) {
+                Dtype datum_element =
+                    static_cast<Dtype>(static_cast<uint8_t>(data[j]));
+                top_data[item_id * size + j] = (datum_element - mean[j]) * scale;
+              }
+            } else {
+              for (int j = 0; j < size; ++j) {
+                top_data[item_id * size + j] =
+                    (datum.float_data(j) - mean[j]) * scale;
+              }
             }
           }
+          // Copy all the labels from datum
+          if (layer->output_labels_) {
+            CHECK_EQ(datum.label_size(), num_labels);
+            for (int l = 0; l < num_labels; ++l) {
+              top_label[item_id * num_labels + l] = datum.label(l);
+            }
+          }
+          // go to the next iter
+          switch (layer->layer_param_.data_param().backend()) {
+          case DataParameter_DB_LEVELDB:
+            layer->iter_->Next();
+            if (!layer->iter_->Valid()) {
+              // We have reached the end. Restart from the first.
+              DLOG(INFO) << "Restarting data prefetching from start.";
+              layer->iter_->SeekToFirst();
+            }
+            break;
+          case DataParameter_DB_LMDB:
+            if (mdb_cursor_get(layer->mdb_cursor_, &layer->mdb_key_,
+                    &layer->mdb_value_, MDB_NEXT) != MDB_SUCCESS) {
+              // We have reached the end. Restart from the first.
+              DLOG(INFO) << "Restarting data prefetching from start.";
+              CHECK_EQ(mdb_cursor_get(layer->mdb_cursor_, &layer->mdb_key_,
+                      &layer->mdb_value_, MDB_FIRST), MDB_SUCCESS);
+            }
+            break;
+          default:
+            LOG(FATAL) << "Unknown database backend";
+          }
         }
-      }
-    } else {
-      // we will prefer to use data() first, and then try float_data()
-      if (data.size()) {
-        for (int j = 0; j < size; ++j) {
-          Dtype datum_element =
-              static_cast<Dtype>(static_cast<uint8_t>(data[j]));
-          top_data[item_id * size + j] = (datum_element - mean[j]) * scale;
-        }
-      } else {
-        for (int j = 0; j < size; ++j) {
-          top_data[item_id * size + j] =
-              (datum.float_data(j) - mean[j]) * scale;
-        }
-      }
-    }
-    // Copy all the labels from datum
-    if (layer->output_labels_) {
-      CHECK_EQ(datum.label_size(), num_labels);
-      for (int l = 0; l < num_labels; ++l) {
-        top_label[item_id * num_labels + l] = datum.label(l);
-      }
-    }
-    // go to the next iter
-    switch (layer->layer_param_.data_param().backend()) {
-    case DataParameter_DB_LEVELDB:
-      layer->iter_->Next();
-      if (!layer->iter_->Valid()) {
-        // We have reached the end. Restart from the first.
-        DLOG(INFO) << "Restarting data prefetching from start.";
-        layer->iter_->SeekToFirst();
-      }
-      break;
-    case DataParameter_DB_LMDB:
-      if (mdb_cursor_get(layer->mdb_cursor_, &layer->mdb_key_,
-              &layer->mdb_value_, MDB_NEXT) != MDB_SUCCESS) {
-        // We have reached the end. Restart from the first.
-        DLOG(INFO) << "Restarting data prefetching from start.";
-        CHECK_EQ(mdb_cursor_get(layer->mdb_cursor_, &layer->mdb_key_,
-                &layer->mdb_value_, MDB_FIRST), MDB_SUCCESS);
-      }
-      break;
-    default:
-      LOG(FATAL) << "Unknown database backend";
-    }
-  }
 
   return static_cast<void*>(NULL);
 }
@@ -324,10 +366,34 @@ void DataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
     prefetch_label_->mutable_cpu_data();
   }
   data_mean_.cpu_data();
+  ProcessLabelSelectParam();
   DLOG(INFO) << "Initializing prefetch";
   CreatePrefetchThread();
   DLOG(INFO) << "Prefetch initialized.";
 }
+
+template<typename Dtype>
+void ImageLabelDataLayer<Dtype>::ProcessLabelSelectParam(){
+    //this->layer_param_
+	num_labels_      =this->layer_param_.data_param().label_select_param().num_labels() ;
+	balancing_label_ =this->layer_param_.data_param().label_select_param().balance();
+	map2order_label_ =this->layer_param_.data_param().label_select_param().reorder_label();
+	//num_top_label_balance_ =this->layer_param_.image_label_data_param().label_select_param().num_top_label_balance();
+	//CHECK_EQ(is_label_blance,layer_param_.has_class_prob_mapping_file());
+	//const string  label_prob_map_file = layer_param_.class_prob_mapping_file();
+	bool has_prob_file=this->layer_param_.data_param().label_select_param().has_class_prob_mapping_file();
+	if(balancing_label_)
+	   {
+		CHECK_EQ(balancing_label_,has_prob_file);
+		const string&  label_prob_map_file = this->layer_param_.data_param().label_select_param().class_prob_mapping_file();
+		ReadLabelProbMappingFile(label_prob_map_file);
+		LOG(INFO)<<"Done ReadLabelProbMappingFile";
+		compute_label_skip_rate();
+		LOG(INFO)<<"compute_label_skip_rate()";
+		}
+}
+
+
 
 template <typename Dtype>
 void DataLayer<Dtype>::CreatePrefetchThread() {

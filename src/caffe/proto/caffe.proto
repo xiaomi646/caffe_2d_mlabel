@@ -88,7 +88,7 @@ message SolverParameter {
   optional int32 stepsize = 13; // the stepsize for learning rate policy "step"
   optional int32 snapshot = 14 [default = 0]; // The snapshot interval
   optional string snapshot_prefix = 15; // The prefix for the snapshot.
-  
+
   // whether to snapshot diff in the results or not. Snapshotting diff will help
   // debugging but the final protocol buffer size will be much larger.
   optional bool snapshot_diff = 16 [default = false];
@@ -104,17 +104,17 @@ message SolverParameter {
   // random number generator -- useful for reproducible results. Otherwise,
   // (and by default) initialize using a seed derived from the system clock.
   optional int64 random_seed = 20 [default = -1];
-  
-  
+
+
   // This part is for the CNN that is constructed using multiple shared weight nets
   // we only want to save just one single net because the rest of them are just the same
   // this is intended to solve the crash problem when trying to save the entire nets.
-  // Added by Tao Zeng   12/11/2014  
+  // Added by Tao Zeng   12/11/2014
   enum SnapshotMode{
 	SINGLE_NET = 1;
 	FULL_NET   = 0;
   }
-  
+
   optional  SnapshotMode snapshot_mode =23 [default = FULL_NET];
 }
 
@@ -182,7 +182,7 @@ message LayerParameter {
     TANH = 23;
     WINDOW_DATA = 24;
     THRESHOLD = 31;
-	
+
   }
   optional LayerType type = 5; // the layer type from the enum above
 
@@ -294,6 +294,30 @@ message DataParameter {
   // be larger than the number of keys in the leveldb.
   optional uint32 rand_skip = 7 [default = 0];
   optional DB backend = 8 [default = LEVELDB];
+  optional Label_Select_Param  label_select_param =9;
+}
+
+
+message Label_Select_Param{
+ optional bool 		  balance  			              =1 [default =false];
+ optional uint32      num_labels                =2 [default=1000];
+ optional uint32      num_top_label_balance     =3;
+ optional bool        reorder_label             =4 [default=true];
+ optional string      class_prob_mapping_file 	=5;
+}
+message Label_Prob_Mapping_Param{
+ optional bool  ignore_rest_of_label   =      1 [default =true];
+ optional bool  rest_of_label_mapping  =      2 [default =false];
+ //optional bool  balancing_rest_of_label =     3 [default =false];
+ optional int32 rest_of_label_mapping_label = 3 [default =1];
+ optional float rest_of_label_prob          = 4 [default = 0];
+ repeated Label_Prob_Mapping label_prob_mapping_info =5;
+}
+message Label_Prob_Mapping{
+optional string  label_name     =1;
+optional int32   label          =2;
+optional float   prob           =3;
+optional int32   map2label      =4;
 }
 
 // Message that stores parameters used by DropoutLayer
@@ -593,7 +617,7 @@ optional string fileName        =3 ;             //file Name with full path
 message ISH_section{
 optional uint32 sectionID =1;
 repeated imageInfo image= 2;
-optional string labels =3; 
+optional string labels =3;
 }
 
 
@@ -601,11 +625,10 @@ optional string labels =3;
 // message ISH_section{
 //optional uint32 sectionID =1;
 //repeated imageInfo image= 2;
-//repeated string labels =3; 
+//repeated string labels =3;
 // }
 
 
 message ISH_section_param{
 repeated ISH_section ISH_section_info=1;
 }
-

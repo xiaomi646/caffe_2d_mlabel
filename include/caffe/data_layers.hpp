@@ -63,6 +63,7 @@ class DataLayer : public Layer<Dtype> {
   virtual void CreatePrefetchThread();
   virtual void JoinPrefetchThread();
   virtual unsigned int PrefetchRand();
+  virtual void ProcessLabelSelectParam();
 
   shared_ptr<Caffe::RNG> prefetch_rng_;
 
