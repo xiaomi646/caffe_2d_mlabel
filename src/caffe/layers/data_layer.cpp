@@ -49,10 +49,11 @@ void* DataLayerPrefetch(void* layer_pointer) {
   const Dtype* mean = layer->data_mean_.cpu_data();
   for (int item_id = 0; item_id < batch_size; ++item_id) {
     // get a blob
+    bool accept_label =false;
     do{
           switch (layer->layer_param_.data_param().backend()) {
           case DataParameter_DB_LEVELDB:
-            layer->iter_->Next();
+              layer->iter_->Next();
             if (!layer->iter_->Valid()) {
               // We have reached the end. Restart from the first.
               DLOG(INFO) << "Restarting data prefetching from start.";
@@ -86,6 +87,13 @@ void* DataLayerPrefetch(void* layer_pointer) {
             for (int l = 0; l < num_labels; ++l) {
               top_label[item_id * num_labels + l] = datum.label(l);
             }
+            if(layer->balancing_label_&&num_labels ==1){
+              Dtype label  = top_label[item_id ];
+              accept_label = layer->accept_given_label(label);
+              if(accept_label)
+                {	top_label[item_id] = layer->get_converted_label(label);}
+              }else{
+               accept_label = true;}
           }
 
 
@@ -105,7 +113,7 @@ void* DataLayerPrefetch(void* layer_pointer) {
           //   LOG(FATAL) << "Unknown database backend";
           // }
 
-      }while(accept && layer->output_labels_&&num_labels==1);
+      }while(!accept_label && layer->output_labels_&&num_labels==1);
 
           const string& data = datum.data();
           if (crop_size) {
@@ -171,30 +179,30 @@ void* DataLayerPrefetch(void* layer_pointer) {
             }
           }
           // go to the next iter
-          switch (layer->layer_param_.data_param().backend()) {
-          case DataParameter_DB_LEVELDB:
-            layer->iter_->Next();
-            if (!layer->iter_->Valid()) {
-              // We have reached the end. Restart from the first.
-              DLOG(INFO) << "Restarting data prefetching from start.";
-              layer->iter_->SeekToFirst();
-            }
-            break;
-          case DataParameter_DB_LMDB:
-            if (mdb_cursor_get(layer->mdb_cursor_, &layer->mdb_key_,
-                    &layer->mdb_value_, MDB_NEXT) != MDB_SUCCESS) {
-              // We have reached the end. Restart from the first.
-              DLOG(INFO) << "Restarting data prefetching from start.";
-              CHECK_EQ(mdb_cursor_get(layer->mdb_cursor_, &layer->mdb_key_,
-                      &layer->mdb_value_, MDB_FIRST), MDB_SUCCESS);
-            }
-            break;
-          default:
-            LOG(FATAL) << "Unknown database backend";
-          }
+          // switch (layer->layer_param_.data_param().backend()) {
+          // case DataParameter_DB_LEVELDB:
+          //   layer->iter_->Next();
+          //   if (!layer->iter_->Valid()) {
+          //     // We have reached the end. Restart from the first.
+          //     DLOG(INFO) << "Restarting data prefetching from start.";
+          //     layer->iter_->SeekToFirst();
+          //   }
+          //   break;
+          // case DataParameter_DB_LMDB:
+          //   if (mdb_cursor_get(layer->mdb_cursor_, &layer->mdb_key_,
+          //           &layer->mdb_value_, MDB_NEXT) != MDB_SUCCESS) {
+          //     // We have reached the end. Restart from the first.
+          //     DLOG(INFO) << "Restarting data prefetching from start.";
+          //     CHECK_EQ(mdb_cursor_get(layer->mdb_cursor_, &layer->mdb_key_,
+          //             &layer->mdb_value_, MDB_FIRST), MDB_SUCCESS);
+          //   }
+          //   break;
+          // default:
+          //   LOG(FATAL) << "Unknown database backend";
+          // }
         }
 
-  return static_cast<void*>(NULL);
+return static_cast<void*>(NULL);
 }
 
 template <typename Dtype>
@@ -373,12 +381,12 @@ void DataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
 }
 
 template<typename Dtype>
-void ImageLabelDataLayer<Dtype>::ProcessLabelSelectParam(){
+void DataLayer<Dtype>::ProcessLabelSelectParam(){
     //this->layer_param_
 	num_labels_      =this->layer_param_.data_param().label_select_param().num_labels() ;
 	balancing_label_ =this->layer_param_.data_param().label_select_param().balance();
 	map2order_label_ =this->layer_param_.data_param().label_select_param().reorder_label();
-	//num_top_label_balance_ =this->layer_param_.image_label_data_param().label_select_param().num_top_label_balance();
+	//num_top_label_balance_ =this->layer_param_.data_param().label_select_param().num_top_label_balance();
 	//CHECK_EQ(is_label_blance,layer_param_.has_class_prob_mapping_file());
 	//const string  label_prob_map_file = layer_param_.class_prob_mapping_file();
 	bool has_prob_file=this->layer_param_.data_param().label_select_param().has_class_prob_mapping_file();
@@ -392,6 +400,165 @@ void ImageLabelDataLayer<Dtype>::ProcessLabelSelectParam(){
 		LOG(INFO)<<"compute_label_skip_rate()";
 		}
 }
+
+template <typename Dtype>
+void DataLayer<Dtype>::ReadLabelProbMappingFile(const string& source){
+  Label_Prob_Mapping_Param lb_param;
+  ReadProtoFromTextFileOrDie(source, &lb_param);
+  ignore_rest_of_label_ 				= 	lb_param.ignore_rest_of_label();
+  rest_of_label_mapping_ 				= 	lb_param.rest_of_label_mapping();
+  rest_of_label_mapping_label_			=	lb_param.rest_of_label_mapping_label();
+  rest_of_label_prob_					=	lb_param.rest_of_label_prob();
+  num_labels_with_prob_  				= 	lb_param.label_prob_mapping_info_size();
+  if(this->layer_param_.data_param().label_select_param().has_num_top_label_balance())
+	num_top_label_balance_ =this->layer_param_.data_param().label_select_param().num_top_label_balance();
+  else
+	num_top_label_balance_ =  num_labels_with_prob_;
+
+  CHECK_GE(num_top_label_balance_,1);
+  CHECK_GE(num_labels_with_prob_,num_top_label_balance_);
+  CHECK_GE(num_labels_,2);
+  CHECK_GE(num_labels_,num_labels_with_prob_);
+  LOG(INFO)<<"rest_of_label_mapping_  = "<<rest_of_label_mapping_<<" "<<rest_of_label_mapping_label_;
+  label_prob_map_.clear();
+  label_mapping_map_.clear();
+  LOG(INFO)<< "label_prob_map_ size =" <<label_prob_map_.size();
+  for (int i=0;i<num_labels_with_prob_;++i){
+	const Label_Prob_Mapping&   label_prob_mapping_param = lb_param.label_prob_mapping_info(i);
+	int   label 			=	label_prob_mapping_param.label();
+	float lb_prob			=   label_prob_mapping_param.prob();
+	int   mapped_label ;
+	if(label_prob_mapping_param.has_map2label())
+	    mapped_label =   label_prob_mapping_param.map2label();
+	else
+		 mapped_label = label ;
+	label_prob_map_[label]	=	lb_prob;
+	label_mapping_map_[label]=   mapped_label;
+
+  }
+
+
+}
+
+typedef std::pair<int, float> PAIR;
+struct CmpByValue {
+  bool operator()(const PAIR& lhs, const PAIR& rhs)
+  {return lhs.second > rhs.second;}
+ };
+
+
+
+template <typename Dtype>
+void DataLayer<Dtype>::compute_label_skip_rate()
+{
+  //float rest_of_prob =0;
+  float scale_factor =0;
+  vector<PAIR> label_prob_vec(label_prob_map_.begin(), label_prob_map_.end());
+  sort(label_prob_vec.begin(), label_prob_vec.end(), CmpByValue()); //prob descend order;
+
+
+  float bottom_prob=label_prob_vec[num_top_label_balance_-1].second;
+      //for(int i=0;i<num_top_label_balance_;i++)
+       //LOG(INFO)<<"num_top_label_balance_["<< label_prob_vec[i].first<<"] = "<<label_prob_vec[i].second;
+	  if(!ignore_rest_of_label_){
+		  //for (int i=num_top_label_balance_;i<num_labels_with_prob_;++i)
+		  //{
+		//	rest_of_prob+=label_prob_vec[i].second;
+		 // }
+		//	rest_of_prob+=rest_of_label_prob_;
+		    scale_factor =bottom_prob < rest_of_label_prob_? 1.0/bottom_prob: 1.0/rest_of_label_prob_;
+	  }
+	  else
+	  {
+		 scale_factor =1.0/bottom_prob ;
+
+	  }
+	  LOG(INFO)<<" scale_factor =  "<< scale_factor;
+	  LOG(INFO)<<" bottom_prob =   " << bottom_prob;
+	  LOG(INFO)<<"label_prob_vec.size = "<<label_prob_vec.size();
+	 // sleep(10);
+
+	  label_prob_map_.clear();
+	  // remove the class that has prob lower that top k classes;
+	  for(int i=0;i<num_top_label_balance_;++i)
+	  {
+	       int lb= label_prob_vec[i].first;
+		   float prob =label_prob_vec[i].second;
+		   label_prob_map_[lb]=prob;
+		   // mapping the label based on freq
+		   if(map2order_label_)
+		   {
+				label_mapping_map_[lb]=i;
+		   }
+	  }
+
+	  // Init the rest of label class
+
+	  for (int i=0;i<num_labels_ ;++i)
+	  {
+		int label =i;
+		if(label_prob_map_.find(label)==label_prob_map_.end())
+        {
+			if(ignore_rest_of_label_){
+				label_prob_map_[label]	=	0;
+				}
+			else
+			   {
+				 int rest_of_label =(num_labels_-num_top_label_balance_);
+				 if(rest_of_label>0)
+					label_prob_map_[label]	=	rest_of_label_prob_;///rest_of_label;
+					 //LOG(INFO)<<"rest_of_label_prob["<<label<<"]=" <<label_prob_map_[label];
+				}
+			if(rest_of_label_mapping_){
+				label_mapping_map_[label] =   rest_of_label_mapping_label_;
+				//LOG(INFO)<<"rest_of_label_mapping_["<<label<<"]=" <<label_mapping_map_[label];
+				}
+			else
+				label_mapping_map_[label] =   label;
+			// if reorder label is set, override the rest_of_label_mapping_
+			if(map2order_label_){
+			    label_mapping_map_[label] =   num_top_label_balance_;
+			}
+		}
+	 }
+	 //sleep(20);
+	  //auto iterSkipRate  =label_mapping_map_.begin();
+	  std::map<int,float>::iterator iterProb;
+      for (iterProb = label_prob_map_.begin(); iterProb !=label_prob_map_.end(); ++iterProb) {
+				label_skip_rate_map_[iterProb->first] =ceil(iterProb->second*scale_factor);
+				//LOG(INFO)<<"label_skip_rate_map_["<<iterProb->first<<"]=" <<label_skip_rate_map_[iterProb->first];
+
+
+		}
+
+}
+
+
+template <typename Dtype>
+bool DataLayer<Dtype>::accept_given_label(const int label)
+{
+		//
+		//balancing_label_
+		if(!balancing_label_)
+		    return true;
+		//LOG(INFO)<<"label_skip_rate_map_["<<label<<"] =" <<label_skip_rate_map_[label];
+		if (label_skip_rate_map_[label] ==0)
+		   return false;
+		int reminder =PrefetchRand()%label_skip_rate_map_[label];
+		if(reminder ==0)
+		    return true;
+		else
+			return false;
+}
+
+template <typename Dtype>
+int  DataLayer<Dtype>::get_converted_label(const int label){
+         if(!balancing_label_)
+		     return label;
+	    else
+			return label_mapping_map_[label];
+}
+
 
 
 

@@ -64,6 +64,10 @@ class DataLayer : public Layer<Dtype> {
   virtual void JoinPrefetchThread();
   virtual unsigned int PrefetchRand();
   virtual void ProcessLabelSelectParam();
+  virtual void ReadLabelProbMappingFile(const string& file_name);
+  virtual void compute_label_skip_rate();
+  virtual bool accept_given_label(const int label);
+  virtual int  get_converted_label(const int label);
 
   shared_ptr<Caffe::RNG> prefetch_rng_;
 
@@ -87,6 +91,22 @@ class DataLayer : public Layer<Dtype> {
   Blob<Dtype> data_mean_;
   bool output_labels_;
   Caffe::Phase phase_;
+
+
+  // These are parameters for labels select/balance functions.
+  std::map <int, float> label_prob_map_;
+  std::map <int, unsigned int> label_skip_rate_map_;
+  std::map <int, int> label_mapping_map_;
+
+  unsigned  int num_labels_;
+  unsigned  int num_labels_with_prob_ ;
+  bool  balancing_label_;
+  unsigned int num_top_label_balance_;
+  bool  rest_of_label_mapping_;
+  bool  map2order_label_;
+  bool  ignore_rest_of_label_;
+  int   rest_of_label_mapping_label_;
+  float rest_of_label_prob_;
 };
 
 template <typename Dtype>
